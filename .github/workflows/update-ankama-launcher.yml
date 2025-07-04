@@ -126,7 +126,7 @@ jobs:
         if: steps.check_update.outputs.needs_update == 'true'
         uses: stefanzweifel/git-auto-commit-action@v6
         with:
-          commit_message: "Update ankama-launcher to version ${{ steps.update_package.outputs.version }}"
+          commit_message: "chore: update ankama-launcher to version ${{ steps.update_package.outputs.version }}"
           file_pattern: "ankama-launcher/PKGBUILD"
 
       - name: Publish to AUR
