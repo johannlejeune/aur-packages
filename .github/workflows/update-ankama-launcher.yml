@@ -7,27 +7,14 @@ on:
   workflow_dispatch: # Allow manual triggering
 
 jobs:
-  update-package:
+  check-update:
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: write
-
+    outputs:
+      needs_update: ${{ steps.check_update.outputs.needs_update }}
+      version: ${{ steps.check_update.outputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y p7zip-full
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "latest"
 
       - name: Check for updates
         id: check_update
@@ -52,13 +39,34 @@ jobs:
             echo "version=$LATEST_VERSION" >> $GITHUB_OUTPUT
           fi
 
+  update-and-publish:
+    needs: check-update
+    if: needs.check-update.outputs.needs_update == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "latest"
+
       - name: Update package files
         id: update_package
-        if: steps.check_update.outputs.needs_update == 'true'
         run: |
           cd ankama-launcher
 
-          NEW_VERSION="${{ steps.check_update.outputs.version }}"
+          NEW_VERSION="${{ needs.check-update.outputs.version }}"
           PACKAGE_NAME="ankama-launcher"
 
           echo "🔄 Updating to version $NEW_VERSION"
@@ -67,6 +75,10 @@ jobs:
           SOURCE_URL=$(grep -oP "source_x86_64=\(\"(.+)\"\)" PKGBUILD | sed -E "s/source_x86_64=\(\".*::(.+)\"\)/\1/g")
           FILE_NAME="${PACKAGE_NAME}-${NEW_VERSION}-x86_64.AppImage"
           wget "$SOURCE_URL" -O "$FILE_NAME"
+
+          # Download manifest for checksum
+          MANIFEST_URL="https://launcher.cdn.ankama.com/installers/production/latest-linux.yml"
+          wget "$MANIFEST_URL" -O latest-linux.yml
 
           # Verify checksum
           NEW_SHA512=$(grep -oP "sha512: .+" latest-linux.yml | sed "s/sha512: //g" | head -n 1 | openssl base64 -d -A | xxd -p | tr -d '\n')
@@ -108,14 +120,12 @@ jobs:
 
       - name: Commit changes to GitHub
         id: commit_changes
-        if: steps.check_update.outputs.needs_update == 'true'
         uses: stefanzweifel/git-auto-commit-action@v6
         with:
           commit_message: "chore: update ankama-launcher to version ${{ steps.update_package.outputs.version }}"
           file_pattern: "ankama-launcher/PKGBUILD"
 
       - name: Publish to AUR
-        if: steps.check_update.outputs.needs_update == 'true'
         uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
         with:
           pkgname: ankama-launcher
