@@ -9,6 +9,8 @@ on:
 jobs:
   check-update:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       needs_update: ${{ steps.check_update.outputs.needs_update }}
       version: ${{ steps.check_update.outputs.version }}
