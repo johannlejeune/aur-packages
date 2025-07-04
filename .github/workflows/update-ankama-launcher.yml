@@ -1,0 +1,148 @@
+name: Update Ankama Launcher
+
+on:
+  # schedule:
+  #   - cron: "0 9 * * 1-5"
+  #   - cron: "0 18 * * 1-5"
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  update-package:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "latest"
+
+      - name: Check for updates
+        id: check_update
+        run: |
+          cd ankama-launcher
+
+          # Get current version from PKGBUILD
+          CURRENT_VERSION=$(grep -oP "pkgver=[0-9\.]+" PKGBUILD | sed "s/pkgver=//g")
+          echo "Current version: $CURRENT_VERSION"
+
+          # Download manifest
+          MANIFEST_URL="https://launcher.cdn.ankama.com/installers/production/latest-linux.yml"
+          wget "$MANIFEST_URL" -O latest-linux.yml
+
+          # Get latest version from manifest
+          LATEST_VERSION=$(grep -oP "version: [0-9\.]+" latest-linux.yml | sed "s/version: //g")
+          echo "Latest version: $LATEST_VERSION"
+
+          # Compare versions
+          if [ "$CURRENT_VERSION" == "$LATEST_VERSION" ]; then
+            echo "No update needed"
+            echo "needs_update=false" >> $GITHUB_OUTPUT
+          else
+            echo "Update available: $CURRENT_VERSION -> $LATEST_VERSION"
+            echo "needs_update=true" >> $GITHUB_OUTPUT
+            echo "version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update package files
+        id: update_package
+        if: steps.check_update.outputs.needs_update == 'true'
+        run: |
+          cd ankama-launcher
+
+          NEW_VERSION="${{ steps.check_update.outputs.version }}"
+          PACKAGE_NAME="ankama-launcher"
+
+          # Get current source URL
+          SOURCE_URL=$(grep -oP "source_x86_64=\(\"(.+)\"\)" PKGBUILD | sed -E "s/source_x86_64=\(\".*::(.+)\"\)/\1/g")
+
+          echo "Updating to version $NEW_VERSION"
+          echo "Source URL: $SOURCE_URL"
+
+          # Download new AppImage
+          FILE_NAME="${PACKAGE_NAME}-${NEW_VERSION}-x86_64.AppImage"
+          wget "$SOURCE_URL" -O "$FILE_NAME"
+
+          # Get SHA512 sum from manifest (convert from base64 to hex)
+          NEW_SHA512=$(grep -oP "sha512: .+" latest-linux.yml | sed "s/sha512: //g" | head -n 1 | openssl base64 -d -A | xxd -p | tr -d '\n')
+
+          echo "New SHA512: $NEW_SHA512"
+
+          # Verify the downloaded file matches the expected checksum
+          ACTUAL_SHA512=$(sha512sum "$FILE_NAME" | cut -d" " -f1)
+          if [ "$NEW_SHA512" != "$ACTUAL_SHA512" ]; then
+            echo "ERROR: SHA512 mismatch!"
+            echo "Expected: $NEW_SHA512"
+            echo "Actual:   $ACTUAL_SHA512"
+            exit 1
+          fi
+
+          # Extract and verify version from AppImage
+          7z e "$FILE_NAME" "resources/app.asar" > /dev/null 2>&1
+          npx asar extract "app.asar" "app" 2>/dev/null || true
+          EXTRACTED_VERSION=$(cat "app/package.json" | jq ".version" | tr -d '"')
+
+          echo "Extracted version from AppImage: $EXTRACTED_VERSION"
+
+          # Verify versions match
+          if [ "$NEW_VERSION" != "$EXTRACTED_VERSION" ]; then
+            echo "Warning: Manifest version ($NEW_VERSION) differs from AppImage version ($EXTRACTED_VERSION)"
+            echo "Using AppImage version: $EXTRACTED_VERSION"
+            NEW_VERSION="$EXTRACTED_VERSION"
+          fi
+
+          # Update PKGBUILD
+          sed -i -E "s/pkgver=[0-9\.]+/pkgver=${NEW_VERSION}/g" PKGBUILD
+          sed -i -E "s/sha512sums_x86_64=\('[^']+'\)/sha512sums_x86_64=('${NEW_SHA512}')/g" PKGBUILD
+
+          # Reset pkgrel to 1 for new version
+          sed -i -E "s/pkgrel=[0-9\.]+/pkgrel=1/g" PKGBUILD
+
+          echo "Updated PKGBUILD with version $NEW_VERSION"
+
+          # Clean up temporary files
+          rm -f "$FILE_NAME" app.asar latest-linux.yml
+          rm -rf app
+
+          # Save the final version for later steps
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+          echo "Package files updated successfully"
+
+      - name: Commit changes to GitHub
+        id: commit_changes
+        if: steps.check_update.outputs.needs_update == 'true'
+        uses: stefanzweifel/git-auto-commit-action@v6
+        with:
+          commit_message: "Update ankama-launcher to version ${{ steps.update_package.outputs.version }}"
+          file_pattern: "ankama-launcher/PKGBUILD"
+
+      - name: Publish to AUR
+        if: steps.check_update.outputs.needs_update == 'true'
+        uses: KSXGitHub/github-actions-deploy-aur@v4
+        with:
+          pkgname: ankama-launcher
+          pkgbuild: ./ankama-launcher/PKGBUILD
+          assets: |
+            ankama-launcher/ankama-launcher
+            ankama-launcher/ankama-launcher.install
+          updpkgsums: false
+          test: true
+          test_flags: --clean --cleanbuild --syncdeps --noconfirm
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to ${{ steps.update_package.outputs.version }}"
+          ssh_keyscan_types: rsa,ecdsa,ed25519
