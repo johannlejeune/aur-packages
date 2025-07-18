@@ -76,7 +76,7 @@ jobs:
           # Get source URL and download AppImage
           SOURCE_URL=$(grep -oP "source_x86_64=\(\"(.+)\"\)" PKGBUILD | sed -E "s/source_x86_64=\(\".*::(.+)\"\)/\1/g")
           FILE_NAME="${PACKAGE_NAME}-${NEW_VERSION}-x86_64.AppImage"
-          wget "$SOURCE_URL" -O "$FILE_NAME"
+          wget --no-verbose "$SOURCE_URL" -O "$FILE_NAME"
 
           # Download manifest for checksum
           MANIFEST_URL="https://launcher.cdn.ankama.com/installers/production/latest-linux.yml"
@@ -113,9 +113,8 @@ jobs:
 
           echo "📦 PKGBUILD updated to version $NEW_VERSION"
 
-          # Clean up temporary files
-          rm -f "$FILE_NAME" app.asar latest-linux.yml
-          rm -rf app
+          # Clean up untracked files
+          git clean -fd
 
           # Save the final version for later steps
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
