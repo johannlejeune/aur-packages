@@ -121,7 +121,7 @@ jobs:
 
       - name: Commit changes to GitHub
         id: commit_changes
-        uses: stefanzweifel/git-auto-commit-action@v6
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "chore: update ankama-launcher to version ${{ steps.update_package.outputs.version }}"
           file_pattern: "ankama-launcher/PKGBUILD"
