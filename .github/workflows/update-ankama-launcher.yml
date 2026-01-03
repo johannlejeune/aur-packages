@@ -41,7 +41,7 @@ jobs:
             echo "version=$LATEST_VERSION" >> $GITHUB_OUTPUT
           fi
 
-  update-and-publish:
+  update:
     needs: check-update
     if: needs.check-update.outputs.needs_update == 'true'
     runs-on: ubuntu-latest
@@ -129,8 +129,8 @@ jobs:
           file_pattern: "ankama-launcher/PKGBUILD"
 
   publish-to-aur:
-    needs: update-and-publish
+    needs: update
     uses: ./.github/workflows/publish-ankama-launcher.yml
     with:
-      commit_message: Update to ${{ needs.update-and-publish.outputs.version }}
+      commit_message: Update to ${{ needs.update.outputs.version }}
     secrets: inherit
