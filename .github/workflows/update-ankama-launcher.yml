@@ -47,6 +47,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      version: ${{ steps.update_package.outputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -126,20 +128,9 @@ jobs:
           commit_message: "chore: update ankama-launcher to version ${{ steps.update_package.outputs.version }}"
           file_pattern: "ankama-launcher/PKGBUILD"
 
-      - name: Publish to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
-        with:
-          pkgname: ankama-launcher
-          pkgbuild: ./ankama-launcher/PKGBUILD
-          assets: |
-            ankama-launcher/ankama-launcher
-            ankama-launcher/ankama-launcher.install
-          updpkgsums: false
-          test: true
-          test_flags: --clean --cleanbuild --syncdeps --noconfirm
-          post_process: git clean -fd
-          commit_username: ${{ secrets.AUR_USERNAME }}
-          commit_email: ${{ secrets.AUR_EMAIL }}
-          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: "Update to ${{ steps.update_package.outputs.version }}"
-          ssh_keyscan_types: rsa,ecdsa,ed25519
+  publish-to-aur:
+    needs: update-and-publish
+    uses: ./.github/workflows/publish-ankama-launcher.yml
+    with:
+      commit_message: Update to ${{ needs.update-and-publish.outputs.version }}
+    secrets: inherit
