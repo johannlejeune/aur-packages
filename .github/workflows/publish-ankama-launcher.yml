@@ -26,7 +26,7 @@ jobs:
           ref: main
 
       - name: Publish to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.2
         with:
           pkgname: ankama-launcher
           pkgbuild: ./ankama-launcher/PKGBUILD
